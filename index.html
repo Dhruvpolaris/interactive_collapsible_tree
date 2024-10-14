@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Interactive Products Tree</title>
+  <!-- Include D3.js library -->
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <!-- Include jQuery and jQuery UI for autocomplete functionality -->
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script src="https://code.jquery.com/ui/1.13.2/jquery-ui.min.js"></script>
+  <link rel="stylesheet" href="https://code.jquery.com/ui/1.13.2/themes/base/jquery-ui.css">
+  <!-- Include Bootstrap CSS -->
+  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+  <style>
+    body {
+      font-family: sans-serif;
+    }
+    .node circle {
+      stroke: steelblue;
+      stroke-width: 1.5px;
+    }
+    .node text {
+      font-size: 15px;
+    }
+    .link {
+      fill: none;
+      stroke: #555;
+      stroke-opacity: 0.4;
+      stroke-width: 1.5px;
+    }
+    /* Adjust the SVG container */
+    #tree-container {
+      width: 100%;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Website Title -->
+    <h1 class="text-center my-4">Interactive Products Tree</h1>
+    <!-- Search bar -->
+    <div class="row mb-4">
+      <div class="col-md-12">
+        <input type="text" id="search-bar" class="form-control" placeholder="Search for a Node" />
+      </div>
+    </div>
+    <!-- Container to center the chart -->
+    <div class="row">
+      <div class="col-md-12">
+        <div id="chart-container" class="d-flex justify-content-center">
+          <!-- Container for the tree diagram -->
+          <svg id="tree-container"></svg>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Include Popper JS and Bootstrap JS -->
+  <!-- Place these scripts before the closing body tag -->
+  <!-- Popper JS -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.16.0/umd/popper.min.js"></script>
+  <!-- Bootstrap JS -->
+  <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+
+  <script>
+    // Function to load CSV data and build the tree
+    d3.csv("data.csv").then(function(data) {
+      // Build the hierarchy from the CSV data
+      const root = buildHierarchy(data);
+
+      // Collect all node names with full paths
+      const allNodeNames = [];
+      const nodeByName = {};
+
+      root.descendants().forEach(d => {
+        const nodePath = d.ancestors().map(n => n.data.name).reverse().join(" > ");
+        allNodeNames.push(nodePath);
+        nodeByName[nodePath] = d;
+      });
+
+      // Now collapse nodes deeper than level 2
+      root.descendants().forEach((d, i) => {
+        d.id = i;
+        d._children = d.children;
+        if (d.depth && d.depth > 2) d.children = null; // Collapse nodes deeper than level 2
+      });
+
+      // Tree diagram code
+      (function() {
+        const width = 1000;
+        const margin = { top: 10, right: 120, bottom: 10, left: 120 };
+        const dx = 15; // Vertical spacing between nodes
+        const dy = (width / (root.height + 3)) * 1.15; // Increased horizontal spacing by 15%
+        const tree = d3.tree().nodeSize([dx, dy]);
+        const diagonal = d3.linkHorizontal().x(d => d.y).y(d => d.x);
+
+        root.x0 = dy / 2;
+        root.y0 = 0;
+
+        const svg = d3.select("#tree-container")
+          .attr("viewBox", [-margin.left, -margin.top, width + margin.left + margin.right, dx])
+          .style("font", "10px sans-serif")
+          .style("user-select", "none");
+
+        const gLink = svg.append("g")
+          .attr("fill", "none")
+          .attr("stroke", "#555")
+          .attr("stroke-opacity", 0.4)
+          .attr("stroke-width", 1.5);
+
+        const gNode = svg.append("g")
+          .attr("cursor", "pointer")
+          .attr("pointer-events", "all");
+
+        let i = 0;
+        update(root);
+
+        function update(source) {
+          const duration = 250;
+          const nodes = root.descendants().reverse();
+          const links = root.links();
+
+          // Compute the new tree layout.
+          tree(root);
+
+          let left = root;
+          let right = root;
+          root.eachBefore(node => {
+            if (node.x < left.x) left = node;
+            if (node.x > right.x) right = node;
+          });
+
+          const height = right.x - left.x + margin.top + margin.bottom;
+
+          const transition = svg.transition()
+            .duration(duration)
+            .attr("height", height)
+            .attr("viewBox", [-margin.left, left.x - margin.top, width + margin.left + margin.right, height]);
+
+          // Update the nodes
+          const node = gNode.selectAll("g")
+            .data(nodes, d => d.id);
+
+          const nodeEnter = node.enter().append("g")
+            .attr("class", "node")
+            .attr("transform", d => `translate(${source.y0},${source.x0})`)
+            .attr("fill-opacity", 0)
+            .attr("stroke-opacity", 0)
+            .on("click", (event, d) => {
+              d.children = d.children ? null : d._children;
+              update(d);
+            });
+
+          nodeEnter.append("circle")
+            .attr("r", 5)
+            .attr("fill", d => {
+              switch (d.depth) {
+                case 0: return "#FF6347"; // Level 0 (Root)
+                case 1: return "#FFA500"; // Level 1
+                case 2: return "#FFFF00"; // Level 2
+                case 3: return "#9ACD32"; // Level 3
+                case 4: return "#32CD32"; // Level 4
+                case 5: return "#20B2AA"; // Level 5
+                case 6: return "#1E90FF"; // Level 6
+                case 7: return "#9370DB"; // Level 7
+                case 8: return "#FF69B4"; // Level 8
+                default: return "#ccc";
+              }
+            })
+            .attr("stroke-width", 1.5);
+
+          nodeEnter.append("text")
+            .attr("dy", "0.31em")
+            .attr("x", d => d._children ? -10 : 10)
+            .attr("text-anchor", d => d._children ? "end" : "start")
+            .text(d => d.data.name)
+            .attr("fill", "#000"); // Keep text black for readability
+
+          // Transition nodes to their new position
+          const nodeUpdate = node.merge(nodeEnter).transition(transition)
+            .attr("transform", d => `translate(${d.y},${d.x})`)
+            .attr("fill-opacity", 1)
+            .attr("stroke-opacity", 1);
+
+          // Transition exiting nodes
+          const nodeExit = node.exit().transition(transition).remove()
+            .attr("transform", d => `translate(${source.y},${source.x})`)
+            .attr("fill-opacity", 0)
+            .attr("stroke-opacity", 0);
+
+          // Update the links
+          const link = gLink.selectAll("path")
+            .data(links, d => d.target.id);
+
+          const linkEnter = link.enter().append("path")
+            .attr("d", d => {
+              const o = { x: source.x0, y: source.y0 };
+              return diagonal({ source: o, target: o });
+            });
+
+          // Transition links to their new position
+          link.merge(linkEnter).transition(transition)
+            .attr("d", diagonal);
+
+          // Transition exiting links
+          link.exit().transition(transition).remove()
+            .attr("d", d => {
+              const o = { x: source.x, y: source.y };
+              return diagonal({ source: o, target: o });
+            });
+
+          // Stash the old positions for transition
+          root.eachBefore(d => {
+            d.x0 = d.x;
+            d.y0 = d.y;
+          });
+        }
+
+        // Initialize autocomplete inside the IIFE
+        $("#search-bar").autocomplete({
+          source: allNodeNames,
+          select: function(event, ui) {
+            const nodePath = ui.item.value;
+            const node = nodeByName[nodePath];
+            expandToNode(node);
+          }
+        });
+
+        // Function to expand the tree to a specific node
+        function expandToNode(targetNode) {
+          // Collapse all nodes
+          root.each(d => {
+            if (d.children) {
+              d._children = d.children;
+              d.children = null;
+            }
+          });
+
+          // Expand the path to the target node
+          let ancestors = targetNode.ancestors();
+          ancestors.forEach(d => {
+            if (d._children) {
+              d.children = d._children;
+              d._children = null;
+            }
+          });
+
+          update(root);
+        }
+
+      })();
+
+    }).catch(function(error) {
+      console.error('Error loading or processing data:', error);
+    });
+
+    // Function to build the hierarchy from the CSV data
+    function buildHierarchy(csvData) {
+      const root = { name: "Root", children: [] };
+      const levelNames = Object.keys(csvData[0]);
+
+      csvData.forEach(row => {
+        let currentLevel = root;
+        levelNames.forEach(level => {
+          const nodeName = row[level];
+          if (nodeName) {
+            let children = currentLevel.children || [];
+            let node = children.find(n => n.name === nodeName);
+            if (!node) {
+              node = { name: nodeName, children: [] };
+              children.push(node);
+            }
+            currentLevel.children = children;
+            currentLevel = node;
+          }
+        });
+      });
+
+      return d3.hierarchy(root);
+    }
+  </script>
+</body>
+</html>
